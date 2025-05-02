@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Обратный таймер</title>
+  <style id="theme-style"></style>
+  <style>
+    body { 
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      height: 100vh;
+      margin: 0;
+      transition: 0.3s;
+    }
+    #controls {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      font-size: 20px;
+      font-family: Arial, sans-serif;
+    }
+    #timer {
+      font-size: 150px;
+    }
+    input, select, button {
+      font-size: 20px;
+      margin: 5px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid currentColor;
+      border-radius: 4px;
+      font-family: Arial, sans-serif;
+    }
+    #start-btn, #reset-btn {
+      padding: 10px 20px;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    #font-size {
+      width: 80px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls" style="display:none;">
+    Минуты: <input type="number" id="minutes" value="1" min="0"> 
+    Секунды: <input type="number" id="seconds" value="0" min="0" max="59"><br>
+    Тема: 
+    <select id="theme-select">
+      <option value="dark">Тёмная</option>
+      <option value="light" selected>Светлая</option>
+    </select>
+    Шрифт: 
+    <select id="font-select">
+      <option value="monospace">Monospace</option>
+      <option value="Arial" selected>Arial</option>
+    </select><br>
+    Размер: <input type="number" id="font-size" value="150" min="50" max="1000"> px<br>
+    Цвет: <input type="color" id="text-color" value="#000000"><br>
+    <button id="start-btn">Старт</button>
+    <button id="reset-btn">Сброс</button>
+  </div>
+
+  <div id="timer">01:00</div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io();
+    const timerElement = document.getElementById("timer");
+    const controls = document.getElementById("controls");
+    const minutesInput = document.getElementById("minutes");
+    const secondsInput = document.getElementById("seconds");
+    const themeSelect = document.getElementById("theme-select");
+    const fontSelect = document.getElementById("font-select");
+    const fontSizeInput = document.getElementById("font-size");
+    const textColorInput = document.getElementById("text-color");
+    let intervalId = null;
+
+    // Проверка прав администратора
+    if (['localhost', '127.0.0.1'].includes(location.hostname) || new URLSearchParams(window.location.search).has('admin')) {
+      controls.style.display = 'block';
+    }
+
+    // Применение стилей
+    const applyStyle = (theme, font, fontSize, textColor) => {
+      document.getElementById("theme-style").innerHTML = `
+        body { 
+          background: ${theme === 'light' ? 'white' : 'black'} !important; 
+          color: ${theme === 'light' ? 'black' : 'white'} !important; 
+        }
+        #timer { 
+          font-family: ${font} !important; 
+          font-size: ${fontSize}px !important; 
+          color: ${textColor} !important; 
+        }
+      `;
+    };
+
+    // Обновление стилей администратором
+    const updateStyles = () => {
+      const theme = themeSelect.value;
+      const font = fontSelect.value;
+      const fontSize = parseInt(fontSizeInput.value);
+      const textColor = textColorInput.value;
+      applyStyle(theme, font, fontSize, textColor);
+      socket.emit('update_styles', { theme, font, fontSize, textColor });
+    };
+
+    // Обработчики изменений
+    if (controls.style.display === 'block') {
+      themeSelect.addEventListener('change', updateStyles);
+      fontSelect.addEventListener('change', updateStyles);
+      fontSizeInput.addEventListener('input', updateStyles);
+      textColorInput.addEventListener('input', updateStyles);
+    }
+
+    // События WebSocket
+    socket.on('init_settings', (data) => {
+      applyStyle(data.theme, data.font, data.fontSize, data.textColor);
+      themeSelect.value = data.theme;
+      fontSelect.value = data.font;
+      fontSizeInput.value = data.fontSize;
+      textColorInput.value = data.textColor;
+      minutesInput.value = data.minutes;
+      secondsInput.value = data.seconds;
+      timerElement.textContent = `${String(data.minutes).padStart(2, '0')}:${String(data.seconds).padStart(2, '0')}`;
+    });
+
+    socket.on('apply_styles', (data) => applyStyle(data.theme, data.font, data.fontSize, data.textColor));
+    socket.on('start_timer', (data) => startCountdown(data.duration));
+    socket.on('reset_timer', (data) => {
+      timerElement.textContent = `${String(data.minutes).padStart(2, '0')}:${String(data.seconds).padStart(2, '0')}`;
+      clearInterval(intervalId);
+    });
+
+    // Управление таймером
+    document.getElementById("start-btn").addEventListener('click', () => {
+      const duration = parseInt(minutesInput.value) * 60 + parseInt(secondsInput.value);
+      socket.emit('start_timer', { duration });
+    });
+
+    document.getElementById("reset-btn").addEventListener('click', () => {
+      socket.emit('reset_timer', { 
+        minutes: minutesInput.value, 
+        seconds: secondsInput.value 
+      });
+    });
+
+    // Функция отсчета
+    const startCountdown = (duration) => {
+      clearInterval(intervalId);
+      const endTime = Date.now() + duration * 1000;
+      intervalId = setInterval(() => {
+        const left = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+        timerElement.textContent = `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
+        if (left === 0) clearInterval(intervalId);
+      }, 500);
+    };
+  </script>
+</body>
+</html>
